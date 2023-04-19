@@ -13,6 +13,7 @@
 package clojure.lang;
 
 import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
 
 public final class LazySeq extends Obj implements ISeq, Sequential, List, IPending, IHashEq{
 
@@ -21,6 +22,7 @@ private static final long serialVersionUID = 7700080124382322592L;
 private IFn fn;
 private Object sv;
 private ISeq s;
+private final ReentrantLock l = new ReentrantLock();
 
 public LazySeq(IFn fn){
 	this.fn = fn;
@@ -38,7 +40,7 @@ public Obj withMeta(IPersistentMap meta){
 	return new LazySeq(meta, seq());
 }
 
-final synchronized Object sval(){
+final Object sval(){
 	if(fn != null)
 		{
                 sv = fn.invoke();
@@ -49,17 +51,25 @@ final synchronized Object sval(){
 	return s;
 }
 
-final synchronized public ISeq seq(){
-	sval();
-	if(sv != null)
+final public ISeq seq(){
+	try
 		{
-		Object ls = sv;
-		sv = null;
-		while(ls instanceof LazySeq)
+			l.lock();
+			sval();
+			if(sv != null)
 			{
-			ls = ((LazySeq)ls).sval();
+				Object ls = sv;
+				sv = null;
+				while(ls instanceof LazySeq)
+				{
+					ls = ((LazySeq)ls).sval();
+				}
+				s = RT.seq(ls);
 			}
-		s = RT.seq(ls);
+		}
+	finally
+		{
+			l.unlock();
 		}
 	return s;
 }
@@ -67,7 +77,7 @@ final synchronized public ISeq seq(){
 public int count(){
 	int c = 0;
 	for(ISeq s = seq(); s != null; s = s.next())
-		++c;                                                                                
+		++c;
 	return c;
 }
 
@@ -82,7 +92,7 @@ public ISeq next(){
 	seq();
 	if(s == null)
 		return null;
-	return s.next();	
+	return s.next();
 }
 
 public ISeq more(){
